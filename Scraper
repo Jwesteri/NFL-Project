@@ -1,0 +1,41 @@
+library(XML)
+
+#Key
+#urlprefix is the constant in the url until you get to the variable  ex:http://www.pro-football-reference.com/years/
+#urlend is the constant in the url after the variable  ex:/games.htm
+#startyr is a variable which in this case is the start year  ex:2010
+#endyr is a variable which in this case is the last year ex:2019
+#You can change the startyr and endyr to change the parameters everything else should stay the same untless you want to scrape from a different page
+
+#Pro Football Reference Scraper
+PFRscrapeData = function(urlprefix, urlend, startyr, endyr) {
+  master = data.frame()
+  for (i in startyr:endyr) {
+    cat('Loading Year', i, '\n')
+    URL = paste(urlprefix, as.character(i), urlend, sep = "")
+    table = readHTMLTable(URL, stringsAsFactors=F)[[1]]
+    table$Year = i
+    master = rbind(table, master)
+  }
+  return(master)
+}
+
+drafts = PFRscrapeData('http://www.pro-football-reference.com/years/', '/games.htm',
+                    2010, 2019)
+
+#Fox Sports Scraper
+scrapeData = function(urlprefix, urlend, startyr, endyr) {
+  master = data.frame()
+  for (i in startyr:endyr) {
+    cat('Loading Year', i, '\n')
+    URL = paste(urlprefix, as.character(i), urlend, sep = '')
+    table = readHTMLTable(URL, stringsAsFactors=F)
+    table$Year = i
+    master = rbind(table, master)
+  }
+  return(master)
+}
+
+
+scrapeData('https://www.foxsports.com/nfl/players?teamId=0&season=2019&position=0&page=', '&country=0&grouping=0&weightclass=0',
+                2, 136) 
