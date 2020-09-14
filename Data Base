@@ -1,0 +1,19 @@
+#Data that I use
+
+The data sets come from guga31bb
+
+#Height needed to be changed so that it represents actual height instead of 511, 61 etc.
+rosters <- readRDS(url('https://raw.githubusercontent.com/guga31bb/nflfastR-data/master/roster-data/roster.rds'))
+#Turning height into a meaningful number
+rosters$teamPlayers.height = as.numeric(gsub("-","",rosters$teamPlayers.height)) 
+rosters$teamPlayers.height = ifelse(rosters$teamPlayers.height >500, rosters$teamPlayers.height%/% 100,rosters$teamPlayers.height %/% 10) *12 + ifelse(rosters$teamPlayers.height >500, rosters$teamPlayers.height%% 100, rosters$teamPlayers.height %% 10)
+
+#this is play by play data from NFL and you can change seasons to alter which years you pull
+seasons <- 2000 : 2019
+pbp_data <- purrr::map_df(seasons, function(x) {
+  readRDS(
+    url(
+      glue::glue('https://raw.githubusercontent.com/guga31bb/nflfastR-data/master/data/play_by_play_{x}.rds')
+    )
+  ) %>% filter(season_type == 'REG')
+})
