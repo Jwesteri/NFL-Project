@@ -1,0 +1,10 @@
+#This code summarizes player fantasy points production by year and allows the user to see when a player changes teams to analyze the affects on the new team
+
+#pbp_L is from my Data base File
+pbp_L %>% filter(receiver_player_id != "NA") %>% group_by(receiver_player_id, posteam, season) %>% 
+  summarise(FP = sum(yards_gained)*.1+sum(touchdown*6)+sum(complete_pass)*.5,Targets =  n()) %>% mutate("FPT" = FP/Targets, season= n()) %>% 
+  arrange(receiver_player_id, season) %>% 
+  group_by(receiver_player_id) %>%   
+  mutate(Lag_Team = lag(posteam)) %>% 
+  mutate(Lag_Targets = ifelse(posteam != Lag_Team,lag(Targets),1/0),Different_Team_FP = ifelse(posteam != Lag_Team,FP-lag(FP),1/0),Different_Team_FPT = ifelse(posteam != Lag_Team, FPT-lag(FPT),1/0)) %>% mutate(Different_Team_FP) %>% 
+  na.omit() %>% filter(Different_Team_FP != "Inf",Different_Team_FPT != "Inf")
