@@ -17,3 +17,12 @@ pbp_data <- purrr::map_df(seasons, function(x) {
     )
   ) %>% filter(season_type == 'REG')
 })
+
+#Adding players age at the time of the game
+pbp_L$game_date = format(pbp_L$game_date, "%m/%d/%Y")
+rosters$teamPlayers.birthDate = format(rosters$teamPlayers.birthDate, "%m/%d/%Y")
+
+#Adding Age
+A = left_join(pbp_L %>% filter(play_type == "pass",passer_id != "NA", season >= 2000),rosters %>% select(teamPlayers.gsisId  , team.season, teamPlayers.birthDate), by = c("passer_id" = "teamPlayers.gsisId" , "season" = "team.season" )) 
+B = A %>% mutate(Age = round(as.numeric(difftime(strptime(A$game_date, format = "%m/%d/%Y"),
+         strptime(A$teamPlayers.birthDate, format = "%m/%d/%Y"),units= "days"))/365),digits = 0,FP = (yards_gained*.1)+(touchdown*6),FP_QB = (yards_gained*.04)+(touchdown*4))
