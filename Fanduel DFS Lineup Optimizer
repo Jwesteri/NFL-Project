@@ -1,0 +1,199 @@
+library(data.table)
+library(dtplyr)
+library(tidyverse)
+library(ps)
+devtools::install_github("FantasyFootballAnalytics/ffanalytics")
+library(ffanalytics)
+library(lpSolve)
+library(rPref)
+library(kableExtra)
+week = 2
+#Porjection Scraper
+sources <- c('CBS', 'Yahoo', 'FantasySharks', 'NumberFire', 'FantasyPros', 'FantasyData', 'FleaFlicker')
+
+scrape <- scrape_data(src = sources,
+                      pos=c('QB', 'RB', 'WR', 'TE', 'DST'),
+                      season = 2020, 
+                      week=week)
+
+#scoring format
+scoring <- list(
+  pass = list(
+    pass_att = 0, pass_comp = 0, pass_inc = 0, pass_yds = 0.04, pass_tds = 4,
+    pass_int = -1, pass_40_yds = 0,  pass_300_yds = 0, pass_350_yds = 0,
+    pass_400_yds = 0
+  ),
+  rush = list(
+    all_pos = TRUE,
+    rush_yds = 0.1,  rush_att = 0, rush_40_yds = 0, rush_tds = 6,
+    rush_100_yds = 0, rush_150_yds = 0, rush_200_yds = 0),
+  rec = list(
+    all_pos = TRUE,
+    rec = 1, rec_yds = 0.1, rec_tds = 6, rec_40_yds = 0, rec_100_yds = 0,
+    rec_150_yds = 0, rec_200_yds = 0
+  ),
+  misc = list(
+    all_pos = TRUE,
+    fumbles_lost = -1, fumbles_total = 0,
+    sacks = 0, two_pts = 2
+  ),
+  ret = list(
+    all_pos = TRUE,
+    return_tds = 6, return_yds = 0
+  ),
+  dst = list(
+    dst_fum_rec = 2,  dst_int = 2, dst_safety = 2, dst_sacks = 1, dst_td = 6,
+    dst_blk = 2, dst_ret_yds = 0, dst_pts_allowed = 0
+  ),
+  pts_bracket = list(
+    list(threshold = 0, points = 10),
+    list(threshold = 1, points = 7),
+    list(threshold = 7, points = 4),
+    list(threshold = 14, points = 1),
+    list(threshold = 21, points = 0),
+    list(threshold = 28, points = -1),
+    list(threshold = 35, points = -4)
+  )
+)
+
+#projections
+proj <- projections_table(scrape, scoring_rules = scoring) %>%
+  add_player_info()
+
+#Fanduel CSV
+sal <- read_csv('D:/NFL Project/Fanduel Prices/FanDuel-NFL-2020-09-20-49877-players-list.csv')
+
+sal = sal %>% mutate(Name = ifelse(Position =="D", `Last Name`, paste(`First Name`, `Last Name`)))
+
+#Cleaning names to match Projections
+sal$Name[sal$Name=='Todd Gurley II'] <- 'Todd Gurley'
+sal$Name[sal$Name=='Melvin Gordon II'] <- 'Melvin Gordon'
+sal$Name[sal$Name=='Gardner Minshew II'] <- 'Gardner Minshew'
+sal$Name[sal$Name=='Allen Robinson II'] <- 'Allen Robinson'
+sal$Name[sal$Name=='Dwayne Haskins Jr.'] <- 'Dwayne Haskins'
+sal$Name[sal$Name=='DJ Chark Jr.'] <- 'DJ Chark'
+sal$Name[sal$Name=='Marvin Jones Jr.'] <- 'Marvin Jones'
+sal$Name[sal$Name=='Mark Ingram II'] <- 'Mark Ingram'
+sal$Name[sal$Name=='Will Fuller V'] <- 'Will Fuller'
+sal$Name[sal$Name=='Robert Griffin III'] <- 'Robert Griffin'
+sal$Name[sal$Name=='Ronald Jones II'] <- 'Ronald Jones'
+sal$Name[sal$Name=='Willie Snead IV'] <- 'Willie Snead'
+sal$Name[sal$Name=='Steven Sims Jr.'] <- 'Steven Sims'
+sal$Name[sal$Name=='Darrell Henderson Jr.'] <- 'Darrell Henderson'
+sal$Name[sal$Name=='Laviska Shenault Jr.'] <- 'Laviska Shenault'
+sal$Name[sal$Name=='Irv Smith Jr.'] <- 'Irv Smith'
+sal$Name[sal$Name=='Van Jefferson Jr.'] <- 'Van Jefferson'
+sal$Name[sal$Name=='Benny Snell Jr.'] <- 'Benny Snell'
+sal$Name[sal$Name=='Michael Pittman Jr.'] <- 'Michael Pittman'
+sal$Name[sal$Name=='Anthony McFarland Jr.'] <- 'Anthony McFarland'
+sal$Name[sal$Name=='Richie James Jr.'] <- 'Richie James'
+sal$Name[sal$Name=='Michael Warren II'] <- 'Michael Warren'
+sal$Name[sal$Name=='Karan Higdon Jr'] <- 'Karan Higdon'
+sal$Name[sal$Name=='Wayne Gallman Jr.'] <- 'Wayne Gallman'
+sal$Name[sal$Name=='Adrian Killins Jr.'] <- 'Adrian Killins'
+sal$Name[sal$Name=='Lynn Bowden Jr.'] <- 'Lynn Bowden'
+sal$Name[sal$Name=='Steven Mitchell Jr.'] <- 'Steven Mitchell'
+sal$Name[sal$Name=='Michael Jacquet III'] <- 'Michael Jacquet'
+sal$Name[sal$Name=='Reggie White Jr.'] <- 'Reggie White'
+
+
+
+
+
+
+
+
+#Optimizer 
+generate_lineup <- function(n){
+  
+  pred_sal <- proj %>% 
+    filter(avg_type=='robust') %>%
+    mutate(Name = ifelse(pos =="DST", last_name, paste(first_name, last_name))) %>%
+    inner_join(sal, by=c("Name")) %>%
+    select(Name, team, position, points, Salary, sd_pts) %>%
+    filter(!is.na(points), !is.na(Salary)) %>%
+    group_by(Name) %>%
+    mutate(sal_max=max(Salary)) %>%
+    filter(Salary==sal_max) %>%
+    group_by(Name) %>%
+    mutate(pts_pred = rnorm(1, points, sd_pts),
+           lineup=n) %>%
+    select(-sal_max)
+  
+  
+  obj <- pred_sal$pts_pred
+  
+  mat <- rbind(t(model.matrix(~ position + 0,pred_sal)), t(model.matrix(~ position + 0,pred_sal)), rep(1, nrow(pred_sal)), pred_sal$Salary)
+  
+  dir <- c("=","=","<=","<=","<=", "=","=",">=",">=",">=","=","<=")
+  #roster construstion QB
+  rhs <- c(1,1,3,2,4,1,1,2,1,3,9,60000)
+  
+  result <- lp("max", obj, mat, dir, rhs, all.bin = TRUE)   
+  
+  results <- pred_sal[which(result$solution == 1),]
+  
+  return(results)
+}
+
+#creating 10000 different lineups to fit fanduels peratmeters 
+
+sim_lu <- map_df(1:10000, generate_lineup) %>%
+  rename(pts_base=points) %>%
+  select(lineup, Name, team, position, pts_base, pts_pred, sd_pts, Salary)
+
+sim_lu %>%
+  filter(lineup<=3) %>%
+  arrange(lineup, position, desc(pts_pred)) %>%
+  knitr::kable() %>%
+  kable_styling() %>%
+  column_spec(1, bold=TRUE) %>%
+  collapse_rows(columns = 1, valign = 'top')
+
+#Player distributions
+sim_lu %>%
+  group_by(Name, position) %>%
+  dplyr::summarize(lu=n_distinct(lineup)) %>%
+  ungroup() %>%
+  group_by(position) %>%
+  top_n(10, lu) %>%
+  ungroup() %>%
+  arrange(position, desc(lu)) %>%
+  mutate(Name=factor(Name),
+         Name=fct_reorder(Name, lu)) %>%
+  ggplot(aes(x=Name, y=lu)) +
+  geom_bar(stat='identity') +
+  facet_wrap(~position, ncol = 3, scales='free') +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  ggtitle('Top 10 Players Present by Position')
+
+#Distribution of Line ups
+sim_lu %>%
+  group_by(lineup) %>%
+  dplyr::summarize(points=sum(pts_pred)) %>%
+  ggplot(aes(x=points)) +
+  geom_histogram() +
+  ggtitle('Points Distribution of Optimal Lineups')
+
+#Paretos Frontier to minimize risk and maximize points
+#I am looking at the most optimal lineups
+lu_df <- sim_lu %>%
+  group_by(lineup) %>%
+  dplyr::summarize(lineup_pts=sum(pts_pred),
+                   lineup_sd=sum(sd_pts)) %>%
+  ungroup()
+
+pto <- psel(lu_df, low(lineup_sd) * high(lineup_pts))
+
+
+ggplot(lu_df, aes(y=lineup_pts, x=lineup_sd)) +
+  geom_point() +
+  geom_point(data=pto, size=5) +
+  ylab('Lineup Points') +
+  xlab('Lineup Points St Dev') +
+  ggtitle('Lineup Points vs Uncertainty',
+          subtitle = 'Pareto Lineups Bolded')
+
+
+sim_lu %>% filter(lineup == 3119)
