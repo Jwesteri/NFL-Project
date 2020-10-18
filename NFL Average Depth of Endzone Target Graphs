@@ -1,0 +1,25 @@
+seasons <- 2019: 2020
+pbp_data <- purrr::map_df(seasons, function(x) {
+  readRDS(
+    url(
+      glue::glue('https://raw.githubusercontent.com/guga31bb/nflfastR-data/master/data/play_by_play_{x}.rds')
+    )
+  ) %>% filter(season_type == 'REG')
+})
+
+aEDoT = pbp  %>% 
+  mutate(Shots= air_yards/yardline_100, season == 2019) %>%
+  filter(play_type == "pass", Shots == 1, receiver_player_id != "NA" ) %>% 
+  group_by(passer_player_id,passer_player_name) %>% summarise(aEDoT1 = mean(air_yards), epa = mean(epa),  Shots = sum(Shots))
+aEDoT
+
+#Quarter Back Average Depth of Endzone Target Graph
+aEDoT %>% filter(Shots > 10) %>% ggplot(aes(x=aEDoT1 , y= epa)) +
+  geom_point()+
+  geom_text_repel(aes(label=passer_player_name),
+                  force=1, point.padding=.5,
+                  segment.size=0.2)+
+  labs(title = "Team End Zone Targets", 
+       x = "aEDoT",
+       caption = "Data from nflscrapR",
+       subtitle = "2019")
